@@ -4,9 +4,10 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <iostream>
-#include "json.hpp"
 #include <cmath>
-#include "common.hpp"
+#include "../include/common.hpp"
+#include "../include/json.hpp"
+
 
 using json = nlohmann::json;
 
@@ -14,51 +15,25 @@ bool check_duplicates(const json& j, const json& j_temp);
 
 int main()
 {
+    tcp_server A(3425), B(3426);
     json j_a{}, j_b{};
-    int sock_a, sock_b, listener_a, listener_b;
-    struct sockaddr_in addr_a, addr_b;
 
-    listener_a = socket(AF_INET, SOCK_STREAM, 0);
-    listener_b = socket(AF_INET, SOCK_STREAM, 0);
+    A.bind_server();
+    B.bind_server();
 
-    if(listener_a < 0 || listener_b < 0)
-    {
-        perror("socket");
-        exit(1);
-    }
-    
-    addr_a.sin_family = AF_INET;
-    addr_a.sin_port = htons(3425);
-    addr_a.sin_addr.s_addr = htonl(INADDR_ANY);
+    A.listen_server(1);
+    B.listen_server(2);
 
-    addr_b.sin_family = AF_INET;
-    addr_b.sin_port = htons(3426);
-    addr_b.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    if(bind(listener_a, (struct sockaddr *)&addr_a, sizeof(addr_a)) < 0 || 
-        bind(listener_b, (struct sockaddr *)&addr_b, sizeof(addr_b)) < 0)
-    {
-        perror("bind");
-        exit(2);
-    }
-
-    listen(listener_a, 1);
-    listen(listener_b, 2);
-    
     while(1)
     {
-        sock_a = accept(listener_a, NULL, NULL);
-        sock_b = accept(listener_b, NULL, NULL);
-        if(sock_a < 0 || sock_b < 0)
-        {
-            perror("accept");
-            exit(3);
-        }
-            std::string line_a = read_line(sock_a);
+        A.accept_client();
+        B.accept_client();
+
+            std::string line_a = A.read_info();
 
             if(line_a.empty()) {
-                close(sock_a);
-                close(sock_b);
+                A.close_client_socket();
+                B.close_client_socket();
                 continue;
             }
 
@@ -71,15 +46,15 @@ int main()
                     j_a["y"] = j_temp_a["y"];
                     j_a["z"] = j_temp_a["z"];
                 } else {
-                    close(sock_a);
-                    close(sock_b);
+                    A.close_client_socket();
+                    B.close_client_socket();
                     continue;
                 }
 
                 std::string str_a = j_a.dump() + '\n';
-                send(sock_b, str_a.c_str(), str_a.size(), 0);
+                B.send_info(str_a);
 
-                std::string line_b = read_line(sock_b);
+                std::string line_b = B.read_info();
 
                 json j_temp_b = json::parse(line_b);
 
@@ -87,15 +62,14 @@ int main()
                 j_b["timestamp"] = j_temp_b["timestamp"];
 
                 std::string str_b = j_b.dump() + '\n';
-                send(sock_a, str_b.c_str(), str_b.size(), 0);
+                A.send_info(str_b);
 
             } catch(const std::exception& e) {
                 std::cerr << e.what() << std::endl;
             }
-
-        close(sock_a);
-        close(sock_b);
     }
+    A.close_client_socket();
+    B.close_client_socket();
 
     return 0;
 }
